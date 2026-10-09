@@ -14,6 +14,7 @@ export type SubscriptionPlan =
 
 export interface SubscriptionHistoryRecord {
   id: string;
+  clientId: string;
   extendedAt: string; // ISO string
   durationDays: number;
   previousExpiryDate: string; // ISO string
@@ -23,7 +24,9 @@ export interface SubscriptionHistoryRecord {
   currency?: string;
   paymentReference?: string;
   notes?: string;
-  extendedBy?: string; // admin or client
+  extendedBy?: string; // admin, system, or client
+  type?: "trial_creation" | "extension" | "plan_change" | "cancellation" | string;
+  createdAt?: string;
 }
 
 export interface ClientSubscription {
@@ -33,7 +36,7 @@ export interface ClientSubscription {
   durationDays: number;
   expiryDate: string; // ISO string
   autoRenew?: boolean;
-  history: SubscriptionHistoryRecord[];
+  history?: SubscriptionHistoryRecord[];
 }
 
 export interface ClientDocument {

@@ -326,6 +326,21 @@ async function runTests() {
     }
   });
 
+  // 18b. Client views subscription history from separate collection
+  await test("GET /subscriptions/:clientId/history returns history records from separate collection", async () => {
+    const res = await fetch(`${baseUrl}/subscriptions/${client1Id}/history`, {
+      headers: { Authorization: `Bearer ${client1Token}` },
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 200 || !Array.isArray(data.data) || data.data.length < 2) {
+      throw new Error(`Expected at least 2 history records, got ${res.status}: ${JSON.stringify(data)}`);
+    }
+    const latest = data.data[0];
+    if (latest.clientId !== client1Id || latest.plan !== "pro") {
+      throw new Error(`Expected latest history record to have clientId ${client1Id} and plan 'pro', got: ${JSON.stringify(latest)}`);
+    }
+  });
+
   // 19. Role Guard: Client CANNOT cancel subscriptions (403 Forbidden)
   await test("POST /subscriptions/cancel returns 403 Forbidden when called by a regular client", async () => {
     const res = await fetch(`${baseUrl}/subscriptions/cancel`, {

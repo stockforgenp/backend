@@ -7,17 +7,14 @@ import {
   ClientAuthResponse,
   ClientSubscription,
 } from "../types";
-import {
-  admin,
-  firebaseAuth,
-  firestore,
-} from "../config/firebase";
+import { admin, firebaseAuth, firestore } from "../config/firebase";
 import { env } from "../config/env";
 import { ApiError } from "../utils/apiError";
 import { addDays, isDateExpired, getRemainingDays } from "../utils/dateUtils";
 import { AdminService } from "./admin.service";
 
-const FIRESTORE_COLLECTION = "clients";
+export const FIRESTORE_COLLECTION = "clients";
+export const SUBSCRIPTION_HISTORY_COLLECTION = "subscription_history";
 
 export class ClientService {
   /**
@@ -80,18 +77,6 @@ export class ClientService {
       durationDays: trialDays,
       expiryDate: expiryDate.toISOString(),
       autoRenew: false,
-      history: [
-        {
-          id: `hist_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
-          extendedAt: now.toISOString(),
-          durationDays: trialDays,
-          previousExpiryDate: now.toISOString(),
-          newExpiryDate: expiryDate.toISOString(),
-          plan,
-          notes: "Initial account registration & trial allocation",
-          extendedBy: "system",
-        },
-      ],
     };
 
     let uid = "";
@@ -128,11 +113,31 @@ export class ClientService {
         updatedAt: now.toISOString(),
       };
 
-      // Save to Firestore
+      // Save client profile to Firestore
       await firestore
         .collection(FIRESTORE_COLLECTION)
         .doc(uid)
         .set(this.cleanObject(clientDoc));
+
+      // Save initial subscription history record to separate collection
+      const initialHistoryRecord = {
+        id: `sub_hist_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
+        clientId: uid,
+        type: "trial_creation",
+        extendedAt: now.toISOString(),
+        durationDays: trialDays,
+        previousExpiryDate: now.toISOString(),
+        newExpiryDate: expiryDate.toISOString(),
+        plan,
+        notes: "Initial account registration & trial allocation",
+        extendedBy: "system",
+        createdAt: now.toISOString(),
+      };
+
+      await firestore
+        .collection(SUBSCRIPTION_HISTORY_COLLECTION)
+        .doc(initialHistoryRecord.id)
+        .set(this.cleanObject(initialHistoryRecord));
 
       const token = await this.generateAuthToken(clientDoc);
 
@@ -165,7 +170,9 @@ export class ClientService {
     input: LoginClientInput,
   ): Promise<ClientAuthResponse> {
     if (!env.FIREBASE_WEB_API_KEY) {
-      throw ApiError.internal("FIREBASE_WEB_API_KEY is not configured on the server");
+      throw ApiError.internal(
+        "FIREBASE_WEB_API_KEY is not configured on the server",
+      );
     }
 
     const verifyUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${env.FIREBASE_WEB_API_KEY}`;
@@ -342,9 +349,7 @@ export class ClientService {
     }
 
     const snapshot = await queryRef.get();
-    let allDocs = snapshot.docs.map(
-      (doc: any) => doc.data() as ClientDocument,
-    );
+    let allDocs = snapshot.docs.map((doc: any) => doc.data() as ClientDocument);
 
     if (query.search) {
       const search = query.search.toLowerCase();
@@ -369,7 +374,28 @@ export class ClientService {
   static async deleteClient(id: string): Promise<boolean> {
     await this.getClientById(id);
 
+    // Delete client document
     await firestore.collection(FIRESTORE_COLLECTION).doc(id).delete();
+
+    // Delete associated subscription history documents
+    try {
+      const historyDocs = await firestore
+        .collection(SUBSCRIPTION_HISTORY_COLLECTION)
+        .where("clientId", "==", id)
+        .get();
+
+      if (!historyDocs.empty) {
+        const batch = firestore.batch();
+        historyDocs.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+      }
+    } catch (histErr) {
+      console.warn(
+        `Failed to clean up subscription history for client ${id}:`,
+        histErr,
+      );
+    }
+
     try {
       await firebaseAuth.deleteUser(id);
     } catch (err) {

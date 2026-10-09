@@ -13,13 +13,15 @@ import {
   getRemainingDays,
   isDateExpired,
 } from "../utils/dateUtils";
-import { ClientService } from "./client.service";
-
-const FIRESTORE_COLLECTION = "clients";
+import {
+  ClientService,
+  FIRESTORE_COLLECTION,
+  SUBSCRIPTION_HISTORY_COLLECTION,
+} from "./client.service";
 
 export class SubscriptionService {
   /**
-   * Extend client subscription
+   * Extend client subscription and record transaction in separate collection
    */
   static async extendSubscription(input: ExtendSubscriptionInput): Promise<{
     client: any;
@@ -40,6 +42,8 @@ export class SubscriptionService {
 
     const historyRecord: SubscriptionHistoryRecord = {
       id: `sub_ext_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
+      clientId: client.id,
+      type: "extension",
       extendedAt: now,
       durationDays: input.durationDays,
       previousExpiryDate,
@@ -51,15 +55,23 @@ export class SubscriptionService {
       notes:
         input.notes || `Extended subscription by ${input.durationDays} days`,
       extendedBy: "admin",
+      createdAt: now,
     };
 
+    // 1. Save history record in separate subscription_history collection
+    await firestore
+      .collection(SUBSCRIPTION_HISTORY_COLLECTION)
+      .doc(historyRecord.id)
+      .set(ClientService.cleanObject(historyRecord));
+
+    // 2. Update active subscription on client document
     const updatedSubscription: ClientSubscription = {
-      ...currentSub,
       plan: targetPlan,
       status: "active",
-      expiryDate: newExpiryDate,
+      startDate: currentSub.startDate,
       durationDays: currentSub.durationDays + input.durationDays,
-      history: [...(currentSub.history || []), historyRecord],
+      expiryDate: newExpiryDate,
+      autoRenew: currentSub.autoRenew || false,
     };
 
     const updatedClient = {
@@ -68,13 +80,12 @@ export class SubscriptionService {
       updatedAt: now,
     };
 
-    // Update in Firestore
     await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
       subscription: updatedSubscription,
       updatedAt: now,
     });
 
-    // Sync custom claims if plan was updated
+    // 3. Sync custom claims if plan was updated
     if (firebaseAuth && input.plan && input.plan !== currentSub.plan) {
       try {
         await firebaseAuth.setCustomUserClaims(client.id, {
@@ -112,6 +123,12 @@ export class SubscriptionService {
     const client = await ClientService.getClientById(clientId);
     const sub = client.subscription;
 
+    // Fetch total history records count from separate subscription_history collection
+    const historySnap = await firestore
+      .collection(SUBSCRIPTION_HISTORY_COLLECTION)
+      .where("clientId", "==", clientId)
+      .get();
+
     return {
       clientId: client.id,
       status: sub.status,
@@ -120,22 +137,39 @@ export class SubscriptionService {
       expiryDate: sub.expiryDate,
       daysRemaining: getRemainingDays(sub.expiryDate),
       isExpired: isDateExpired(sub.expiryDate),
-      totalExtensions: sub.history ? sub.history.length : 0,
+      totalExtensions: historySnap.size,
     };
   }
 
   /**
-   * Get subscription payment and extension history
+   * Get subscription payment and extension history from separate collection
    */
   static async getSubscriptionHistory(
     clientId: string,
   ): Promise<SubscriptionHistoryRecord[]> {
-    const client = await ClientService.getClientById(clientId);
-    return client.subscription.history || [];
+    // Ensure client exists first
+    await ClientService.getClientById(clientId);
+
+    const snapshot = await firestore
+      .collection(SUBSCRIPTION_HISTORY_COLLECTION)
+      .where("clientId", "==", clientId)
+      .get();
+
+    const historyList = snapshot.docs.map(
+      (doc) => doc.data() as SubscriptionHistoryRecord,
+    );
+
+    // Sort newest first
+    historyList.sort(
+      (a, b) =>
+        new Date(b.extendedAt).getTime() - new Date(a.extendedAt).getTime(),
+    );
+
+    return historyList;
   }
 
   /**
-   * Cancel client subscription
+   * Cancel client subscription and record event in separate collection
    */
   static async cancelSubscription(
     clientId: string,
@@ -146,6 +180,8 @@ export class SubscriptionService {
 
     const cancellationRecord: SubscriptionHistoryRecord = {
       id: `sub_cancel_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
+      clientId: client.id,
+      type: "cancellation",
       extendedAt: now,
       durationDays: 0,
       previousExpiryDate: client.subscription.expiryDate,
@@ -155,19 +191,25 @@ export class SubscriptionService {
         ? `Subscription cancelled: ${reason}`
         : "Subscription cancelled by administrator",
       extendedBy: "admin",
+      createdAt: now,
     };
 
+    // 1. Save cancellation entry in separate subscription_history collection
+    await firestore
+      .collection(SUBSCRIPTION_HISTORY_COLLECTION)
+      .doc(cancellationRecord.id)
+      .set(ClientService.cleanObject(cancellationRecord));
+
+    // 2. Update subscription status on client document
     const updatedSubscription: ClientSubscription = {
       ...client.subscription,
       status: "cancelled",
       autoRenew: false,
-      history: [...(client.subscription.history || []), cancellationRecord],
     };
 
     await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
       "subscription.status": "cancelled",
       "subscription.autoRenew": false,
-      "subscription.history": updatedSubscription.history,
       updatedAt: now,
     });
 

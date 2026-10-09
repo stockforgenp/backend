@@ -380,7 +380,7 @@ Base URL: `http://localhost:5000/api/v1`
 
 #### Get Subscription Extension History
 `GET /api/v1/subscriptions/:clientId/history`
-- Returns audit list of all extensions, renewals, and plan upgrades with transaction IDs and dates.
+- Returns audit list of all extensions, renewals, trial allocations, and cancellations stored in the dedicated `subscription_history` collection, ordered newest first.
 
 #### Cancel Subscription (Super Admin Only)
 `POST /api/v1/subscriptions/cancel`
