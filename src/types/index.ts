@@ -101,3 +101,19 @@ export interface ClientAuthResponse {
     isExpired: boolean;
   };
 }
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  phoneNumber: string;
+  role: 'super_admin' | 'admin';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminAuthResponse {
+  token: string;
+  tokenType: 'Bearer';
+  admin: AdminUser;
+}

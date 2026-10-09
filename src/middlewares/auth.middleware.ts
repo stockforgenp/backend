@@ -1,13 +1,12 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
 import { ApiError } from "../utils/apiError";
 import { firebaseAuth, isFirebaseInitialized } from "../config/firebase";
-import { env } from "../config/env";
 
 export interface AuthenticatedUser {
   uid: string;
   email?: string;
-  role?: string;
+  role: "super_admin" | "admin" | "client" | string;
+  isAdmin?: boolean;
   [key: string]: any;
 }
 
@@ -19,6 +18,9 @@ declare global {
   }
 }
 
+/**
+ * Middleware to authenticate Firebase ID token
+ */
 export async function authenticateToken(
   req: Request,
   _res: Response,
@@ -38,46 +40,50 @@ export async function authenticateToken(
     return next(ApiError.unauthorized("Authentication token is missing"));
   }
 
-  try {
-    // 1. If Firebase Admin is available, try verifying Firebase ID token
-    if (isFirebaseInitialized && firebaseAuth) {
-      try {
-        const decodedToken = await firebaseAuth.verifyIdToken(token);
-        req.user = {
-          ...decodedToken,
-          uid: decodedToken.uid,
-          email: decodedToken.email,
-          role: decodedToken.role || "client",
-        };
-        return next();
-      } catch (fbError: any) {
-        // If it was specifically a Firebase format error, try fallback JWT
-        if (fbError.code === "auth/id-token-expired") {
-          return next(
-            ApiError.unauthorized("Session has expired. Please log in again."),
-          );
-        }
-      }
-    }
+  if (!isFirebaseInitialized || !firebaseAuth) {
+    return next(
+      ApiError.internal("Firebase authentication is not initialized on the server"),
+    );
+  }
 
-    // 2. Fallback to JWT verification (useful for local development, API tokens, or direct JWT sessions)
-    try {
-      const decodedJwt = jwt.verify(token, env.JWT_SECRET) as AuthenticatedUser;
-      req.user = decodedJwt;
-      return next();
-    } catch (jwtError: any) {
-      if (jwtError.name === "TokenExpiredError") {
-        return next(
-          ApiError.unauthorized("Token expired. Please log in again."),
-        );
-      }
-      return next(ApiError.unauthorized("Invalid authentication token"));
+  try {
+    const decodedToken = await firebaseAuth.verifyIdToken(token);
+    const role =
+      decodedToken.role ||
+      (decodedToken.admin || decodedToken.isAdmin
+        ? "super_admin"
+        : "client");
+
+    req.user = {
+      ...decodedToken,
+      uid: decodedToken.uid,
+      email: decodedToken.email,
+      role,
+      isAdmin: role === "super_admin" || role === "admin",
+    };
+    return next();
+  } catch (fbError: any) {
+    if (fbError.code === "auth/id-token-expired") {
+      return next(
+        ApiError.unauthorized("Session has expired. Please log in again."),
+      );
     }
-  } catch (error) {
-    return next(error);
+    if (fbError.code === "auth/id-token-revoked") {
+      return next(
+        ApiError.unauthorized("Session token has been revoked. Please log in again."),
+      );
+    }
+    return next(
+      ApiError.unauthorized(
+        `Invalid Firebase ID token: ${fbError.message || "Verification failed"}`,
+      ),
+    );
   }
 }
 
+/**
+ * Optional authentication middleware: attaches user if token is valid, doesn't error if missing
+ */
 export async function optionalAuthenticateToken(
   req: Request,
   _res: Response,
@@ -91,26 +97,82 @@ export async function optionalAuthenticateToken(
   const token = authHeader.split(" ")[1];
   if (!token) return next();
 
-  try {
-    if (isFirebaseInitialized && firebaseAuth) {
-      try {
-        const decoded = await firebaseAuth.verifyIdToken(token);
-        req.user = {
-          ...decoded,
-          uid: decoded.uid,
-          email: decoded.email,
-          role: decoded.role || "client",
-        };
-        return next();
-      } catch {
-        // Continue to JWT check
-      }
-    }
+  if (!isFirebaseInitialized || !firebaseAuth) {
+    return next();
+  }
 
-    const decodedJwt = jwt.verify(token, env.JWT_SECRET) as AuthenticatedUser;
-    req.user = decodedJwt;
+  try {
+    const decoded = await firebaseAuth.verifyIdToken(token);
+    const role =
+      decoded.role ||
+      (decoded.admin || decoded.isAdmin ? "super_admin" : "client");
+
+    req.user = {
+      ...decoded,
+      uid: decoded.uid,
+      email: decoded.email,
+      role,
+      isAdmin: role === "super_admin" || role === "admin",
+    };
   } catch {
     // Optional auth silently ignores invalid tokens
   }
   next();
+}
+
+/**
+ * Middleware to restrict access to specific roles
+ */
+export function requireRole(...roles: string[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      return next(ApiError.unauthorized("Authentication required"));
+    }
+    const userRole = req.user.role || "";
+    if (!roles.includes(userRole)) {
+      return next(
+        ApiError.forbidden(
+          `Access denied. Requires one of the following roles: [${roles.join(", ")}]. Current role: '${userRole}'`,
+        ),
+      );
+    }
+    next();
+  };
+}
+
+/**
+ * Strict Super Admin check
+ */
+export const requireSuperAdmin = requireRole("super_admin");
+
+/**
+ * Admin check (Super Admin or Admin)
+ */
+export const requireAdmin = requireRole("super_admin", "admin");
+
+/**
+ * Allows access if user is Super Admin OR if the targeted resource belongs to the current user
+ * @param paramKey The req.params key representing client/user id (default 'id')
+ */
+export function requireSelfOrSuperAdmin(paramKey: string = "id") {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      return next(ApiError.unauthorized("Authentication required"));
+    }
+
+    const isSuperAdmin =
+      req.user.role === "super_admin" || req.user.role === "admin";
+    const resourceOwnerId = req.params[paramKey];
+    const isSelf = resourceOwnerId && req.user.uid === resourceOwnerId;
+
+    if (isSuperAdmin || isSelf) {
+      return next();
+    }
+
+    return next(
+      ApiError.forbidden(
+        "Access denied: You do not have permission to access or modify this resource",
+      ),
+    );
+  };
 }

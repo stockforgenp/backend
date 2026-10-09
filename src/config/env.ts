@@ -1,28 +1,43 @@
-import dotenv from 'dotenv';
-import path from 'path';
+import dotenv from "dotenv";
+import path from "path";
 
 // Load .env file
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+
+function sanitizePrivateKey(key: string | undefined): string {
+  if (!key) return "";
+  let formatted = key.trim();
+  // Strip surrounding quotes if present
+  if (
+    (formatted.startsWith('"') && formatted.endsWith('"')) ||
+    (formatted.startsWith("'") && formatted.endsWith("'"))
+  ) {
+    formatted = formatted.slice(1, -1);
+  }
+  return formatted.replace(/\\n/g, "\n");
+}
 
 export const env = {
-  NODE_ENV: process.env.NODE_ENV || 'development',
-  PORT: parseInt(process.env.PORT || '5000', 10),
-  CLIENT_CORS_ORIGIN: process.env.CLIENT_CORS_ORIGIN || '*',
+  NODE_ENV: process.env.NODE_ENV || "development",
+  PORT: parseInt(process.env.PORT || "5000", 10),
+  CLIENT_CORS_ORIGIN: process.env.CLIENT_CORS_ORIGIN || "*",
 
-  JWT_SECRET: process.env.JWT_SECRET || 'stockforge_super_secure_jwt_secret_dev_2026',
-  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
 
-  // Firebase Admin Credentials
-  FIREBASE_SERVICE_ACCOUNT_PATH: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
-  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || '',
-  FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || '',
-  FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY
-    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
-    : '',
+  // Firebase Credentials
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID?.trim() || "",
+  FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL?.trim() || "",
+  FIREBASE_PRIVATE_KEY: sanitizePrivateKey(process.env.FIREBASE_PRIVATE_KEY),
+  FIREBASE_WEB_API_KEY: process.env.FIREBASE_WEB_API_KEY?.trim() || "",
 
-  // Firebase Web API Key (Optional, used for email/password authentication REST API)
-  FIREBASE_WEB_API_KEY: process.env.FIREBASE_WEB_API_KEY || '',
+  // Super Admin Credentials
+  SUPER_ADMIN_EMAIL:
+    process.env.SUPER_ADMIN_EMAIL?.trim() || "admin@stockforge.io",
+  SUPER_ADMIN_PASSWORD:
+    process.env.SUPER_ADMIN_PASSWORD || "SuperAdmin@StockForge2026!",
+  SUPER_ADMIN_NAME:
+    process.env.SUPER_ADMIN_NAME?.trim() || "Super Administrator",
+  SUPER_ADMIN_PHONE_NUMBER:
+    process.env.SUPER_ADMIN_PHONE_NUMBER?.trim() || "+9779809167106",
 
-  DEFAULT_TRIAL_DAYS: parseInt(process.env.DEFAULT_TRIAL_DAYS || '14', 10),
+  DEFAULT_TRIAL_DAYS: parseInt(process.env.DEFAULT_TRIAL_DAYS || "14", 10),
 };
-

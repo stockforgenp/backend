@@ -11,7 +11,7 @@ A production-ready TypeScript backend API built with **Express**, **CORS**, **Fi
   - Secure user creation in Firebase Auth (`admin.auth().createUser`)
   - Client profile & subscription records in Firestore (`clients` collection)
   - Custom user claims for role-based permissions (`role: 'client'`, `plan`)
-  - Verification of Firebase ID Tokens (`admin.auth().verifyIdToken`) with fallback JWT session tokens
+  - Verification of Firebase ID Tokens (`admin.auth().verifyIdToken`)
   - Offline / Dev simulation mode when Firebase credentials are not yet configured
 - **Subscription Management**:
   - Automatic trial creation on registration (configurable duration, default 14 days)
@@ -42,7 +42,7 @@ backend/
 │   │   ├── client.controller.ts     # Client auth and profile HTTP handlers
 │   │   └── subscription.controller.ts # Subscription lifecycle HTTP handlers
 │   ├── middlewares/
-│   │   ├── auth.middleware.ts       # Bearer token authentication (Firebase ID Token / JWT)
+│   │   ├── auth.middleware.ts       # Bearer token authentication (Firebase ID Token)
 │   │   ├── error.middleware.ts      # Global centralized error handler
 │   │   ├── notFound.middleware.ts   # 404 handler
 │   │   └── validate.middleware.ts   # Zod request validation
@@ -83,24 +83,16 @@ PORT=5000
 NODE_ENV=development
 CLIENT_CORS_ORIGIN=*
 
-# JWT Fallback Secret
-JWT_SECRET=your_jwt_secret_key_here
-JWT_EXPIRES_IN=7d
-
 # Default Trial Duration
 DEFAULT_TRIAL_DAYS=14
 
-# --- Firebase Configuration (Choose Option 1 or Option 2) ---
+# --- Firebase Credentials ---
+# From Firebase Console -> Project Settings -> Service Accounts:
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 
-# Option 1: File path to Firebase Service Account JSON (Recommended)
-FIREBASE_SERVICE_ACCOUNT_PATH=./serviceAccountKey.json
-
-# Option 2: Individual credentials from Service Account JSON
-# FIREBASE_PROJECT_ID=your-project-id
-# FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com
-# FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-
-# Firebase Web API Key (Optional, used for client email/password login verification)
+# From Firebase Console -> Project Settings -> General -> Web API Key:
 FIREBASE_WEB_API_KEY=AIzaSy...
 ```
 
@@ -123,9 +115,24 @@ npm run typecheck
 # Build for production
 npm run build
 
+# Seed/verify Super Admin in Firebase
+npm run seed:admin
+
 # Start production build
 npm start
 ```
+
+---
+
+## 🛡️ Super Admin Credentials & Management
+
+A dedicated Super Admin account is pre-configured and automatically verified in Firebase Authentication on server start (or manually via `npm run seed:admin`).
+
+### Default Credentials (Configurable in `.env`):
+- **Email**: `admin@stockforge.io` (via `SUPER_ADMIN_EMAIL`)
+- **Password**: `SuperAdmin@StockForge2026!` (via `SUPER_ADMIN_PASSWORD`)
+- **Name**: `Super Administrator` (via `SUPER_ADMIN_NAME`)
+- **Role Claim**: `super_admin` (`isAdmin: true`)
 
 ---
 
@@ -133,10 +140,70 @@ npm start
 
 Base URL: `http://localhost:5000/api/v1`
 
+### 0. Super Admin Endpoints
+
+#### Admin Login
+`POST /api/v1/admin/login`
+- **Request Body**:
+```json
+{
+  "email": "admin@stockforge.io",
+  "password": "SuperAdmin@StockForge2026!"
+}
+```
+- **Response** (`200 OK`):
+```json
+{
+  "success": true,
+  "message": "Super Admin authenticated successfully",
+  "data": {
+    "token": "...",
+    "tokenType": "Bearer",
+    "admin": {
+      "id": "I5tW9mcoQNcetZqST8nsnxIME4W2",
+      "email": "admin@stockforge.io",
+      "name": "Super Administrator",
+      "role": "super_admin"
+    }
+  }
+}
+```
+
+#### Get Current Super Admin Profile
+`GET /api/v1/admin/me`
+- **Headers**: `Authorization: Bearer <super_admin_token>`
+
+#### Manually Trigger Super Admin Seed
+`POST /api/v1/admin/seed`
+- **Headers**: `Authorization: Bearer <super_admin_token>`
+
+---
+
+### Role-Based Access Control (RBAC) Matrix
+
+| Endpoint | Method | Allowed Roles / Access | Description |
+| :--- | :--- | :--- | :--- |
+| `/api/v1/admin/login` | `POST` | Public | Super Admin authentication |
+| `/api/v1/admin/me` | `GET` | `super_admin` | View Super Admin profile |
+| `/api/v1/clients/login` | `POST` | Public | Client login with email/password |
+| `/api/v1/clients/register` | `POST` | **`super_admin` only** | Register a new client account |
+| `/api/v1/clients` | `GET` | **`super_admin` only** | List all clients with pagination & filters |
+| `/api/v1/clients/:id` | `GET` | Self or `super_admin` | View specific client details |
+| `/api/v1/clients/:id` | `PATCH` | Self or `super_admin` | Update client profile details |
+| `/api/v1/clients/:id` | `DELETE` | **`super_admin` only** | Delete a client |
+| `/api/v1/clients/me` | `GET` | Authenticated Client | View own profile & subscription |
+| `/api/v1/subscriptions/extend` | `POST` | **`super_admin` only** | Extend or alter client subscription |
+| `/api/v1/subscriptions/cancel` | `POST` | **`super_admin` only** | Cancel client subscription |
+| `/api/v1/subscriptions/:clientId/status` | `GET` | Self or `super_admin` | Query subscription status & days remaining |
+| `/api/v1/subscriptions/:clientId/history` | `GET` | Self or `super_admin` | Audit log of subscription extensions |
+
+---
+
 ### 1. Client Authentication & Management
 
-#### Register Client
+#### Register Client (Super Admin Only)
 `POST /api/v1/clients/register`
+- **Headers**: `Authorization: Bearer <super_admin_token>`
 - **Request Body**:
 ```json
 {
@@ -233,8 +300,9 @@ Base URL: `http://localhost:5000/api/v1`
 
 ### 2. Subscription Management
 
-#### Extend Subscription
+#### Extend Subscription (Super Admin Only)
 `POST /api/v1/subscriptions/extend`
+- **Headers**: `Authorization: Bearer <super_admin_token>`
 - **Request Body**:
 ```json
 {
@@ -305,8 +373,9 @@ Base URL: `http://localhost:5000/api/v1`
 `GET /api/v1/subscriptions/:clientId/history`
 - Returns audit list of all extensions, renewals, and plan upgrades with transaction IDs and dates.
 
-#### Cancel Subscription
+#### Cancel Subscription (Super Admin Only)
 `POST /api/v1/subscriptions/cancel`
+- **Headers**: `Authorization: Bearer <super_admin_token>`
 - **Request Body**:
 ```json
 {

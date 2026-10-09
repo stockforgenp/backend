@@ -72,10 +72,18 @@ export class SubscriptionService {
 
     // Save to Firestore or Mock
     if (isFirebaseInitialized && firestore) {
-      await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
-        subscription: updatedSubscription,
-        updatedAt: now,
-      });
+      try {
+        await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
+          subscription: updatedSubscription,
+          updatedAt: now,
+        });
+      } catch (dbErr: any) {
+        if (dbErr.code === 7 || dbErr.details?.includes('Cloud Firestore API')) {
+          await mockStorage.updateClient(client.id, updatedClient);
+        } else {
+          throw dbErr;
+        }
+      }
 
       // Sync custom claims if plan was updated
       if (firebaseAuth && input.plan && input.plan !== currentSub.plan) {
@@ -174,12 +182,23 @@ export class SubscriptionService {
     };
 
     if (isFirebaseInitialized && firestore) {
-      await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
-        "subscription.status": "cancelled",
-        "subscription.autoRenew": false,
-        "subscription.history": updatedSubscription.history,
-        updatedAt: now,
-      });
+      try {
+        await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
+          "subscription.status": "cancelled",
+          "subscription.autoRenew": false,
+          "subscription.history": updatedSubscription.history,
+          updatedAt: now,
+        });
+      } catch (dbErr: any) {
+        if (dbErr.code === 7 || dbErr.details?.includes('Cloud Firestore API')) {
+          await mockStorage.updateClient(client.id, {
+            subscription: updatedSubscription,
+            updatedAt: now,
+          });
+        } else {
+          throw dbErr;
+        }
+      }
     } else {
       await mockStorage.updateClient(client.id, {
         subscription: updatedSubscription,

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import clientRoutes from "./client.routes";
 import subscriptionRoutes from "./subscription.routes";
+import adminRoutes from "./admin.routes";
 import { isFirebaseInitialized, isMockMode } from "../config/firebase";
 import { sendSuccess } from "../utils/apiResponse";
 
@@ -20,6 +21,7 @@ router.get("/health", (_req: Request, res: Response) => {
 });
 
 // Mount modular sub-routers
+router.use("/admin", adminRoutes);
 router.use("/clients", clientRoutes);
 router.use("/subscriptions", subscriptionRoutes);
 

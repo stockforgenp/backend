@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import jwt from "jsonwebtoken";
 import {
   ClientDocument,
   RegisterClientInput,
@@ -18,6 +17,7 @@ import { env } from "../config/env";
 import { ApiError } from "../utils/apiError";
 import { addDays, isDateExpired, getRemainingDays } from "../utils/dateUtils";
 import { mockStorage } from "./mockStorage.service";
+import { AdminService } from "./admin.service";
 
 const FIRESTORE_COLLECTION = "clients";
 
@@ -38,40 +38,36 @@ export class ClientService {
     return sub;
   }
 
+  static cleanObject<T extends Record<string, any>>(obj: T): T {
+    const cleaned: any = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (val !== undefined) {
+        cleaned[key] = val;
+      }
+    }
+    return cleaned;
+  }
+
   /**
-   * Helper to generate session token
+   * Helper to generate Firebase ID token for a client
    */
   private static async generateAuthToken(
     client: ClientDocument,
   ): Promise<string> {
-    if (isFirebaseInitialized && firebaseAuth) {
-      try {
-        // Generate Firebase custom token for client SDK sign-in
-        const customToken = await firebaseAuth.createCustomToken(client.id, {
-          email: client.email,
-          role: "client",
-          plan: client.subscription.plan,
-        });
-        return customToken;
-      } catch (err) {
-        console.warn(
-          "Could not create Firebase custom token, falling back to JWT:",
-          err,
-        );
-      }
+    if (!isFirebaseInitialized || !firebaseAuth) {
+      throw ApiError.internal(
+        "Firebase authentication is not initialized on the server",
+      );
     }
 
-    // Standard JWT token for HTTP Bearer auth
-    return jwt.sign(
-      {
-        uid: client.id,
-        email: client.email,
-        role: "client",
-        plan: client.subscription.plan,
-      },
-      env.JWT_SECRET,
-      { expiresIn: env.JWT_EXPIRES_IN } as jwt.SignOptions,
-    );
+    // Create a custom token containing role and plan claims
+    const customToken = await firebaseAuth.createCustomToken(client.id, {
+      role: "client",
+      plan: client.subscription.plan,
+    });
+
+    // Exchange custom token for an official Firebase ID token
+    return await AdminService.exchangeCustomTokenForIdToken(customToken);
   }
 
   /**
@@ -142,11 +138,16 @@ export class ClientService {
           updatedAt: now.toISOString(),
         };
 
-        // Save to Firestore
-        await firestore
-          .collection(FIRESTORE_COLLECTION)
-          .doc(uid)
-          .set(clientDoc);
+        // Save to Firestore (with local fallback if Firestore is not available)
+        try {
+          await firestore
+            .collection(FIRESTORE_COLLECTION)
+            .doc(uid)
+            .set(this.cleanObject(clientDoc));
+        } catch (dbErr: any) {
+          console.warn('⚠️ Firestore write issue, saving client locally:', dbErr.message);
+          await mockStorage.createClient(clientDoc, input.password);
+        }
 
         const token = await this.generateAuthToken(clientDoc);
 
@@ -254,30 +255,61 @@ export class ClientService {
         const uid = data.localId;
         customTokenOrIdToken = data.idToken;
 
-        // Fetch client document from Firestore
-        const docSnap = await firestore
-          .collection(FIRESTORE_COLLECTION)
-          .doc(uid)
-          .get();
-        if (!docSnap.exists) {
+        // Fetch client document from Firestore (or fallback to local mock store)
+        try {
+          const docSnap = await firestore
+            .collection(FIRESTORE_COLLECTION)
+            .doc(uid)
+            .get();
+          if (docSnap.exists) {
+            client = docSnap.data() as ClientDocument;
+          }
+        } catch (dbErr: any) {
+          if (dbErr.code === 7 || dbErr.details?.includes('Cloud Firestore API')) {
+            client = await mockStorage.getClientById(uid);
+          } else {
+            throw dbErr;
+          }
+        }
+
+        if (!client) {
+          client = await mockStorage.getClientById(uid);
+        }
+        if (!client) {
           throw ApiError.notFound("Client profile not found in database");
         }
-        client = docSnap.data() as ClientDocument;
       } else {
         // When Firebase Web API Key is not set, lookup by email in Firebase Auth
         try {
           const userRecord = await firebaseAuth.getUserByEmail(input.email);
-          const docSnap = await firestore
-            .collection(FIRESTORE_COLLECTION)
-            .doc(userRecord.uid)
-            .get();
-          if (!docSnap.exists) {
+          try {
+            const docSnap = await firestore
+              .collection(FIRESTORE_COLLECTION)
+              .doc(userRecord.uid)
+              .get();
+            if (docSnap.exists) {
+              client = docSnap.data() as ClientDocument;
+            }
+          } catch (dbErr: any) {
+            if (dbErr.code === 7 || dbErr.details?.includes('Cloud Firestore API')) {
+              client = await mockStorage.getClientById(userRecord.uid);
+            } else {
+              throw dbErr;
+            }
+          }
+
+          if (!client) {
+            client = await mockStorage.getClientById(userRecord.uid);
+          }
+          if (!client) {
             throw ApiError.notFound("Client profile not found in database");
           }
-          client = docSnap.data() as ClientDocument;
-          customTokenOrIdToken = await firebaseAuth.createCustomToken(
+          const customToken = await firebaseAuth.createCustomToken(
             userRecord.uid,
+            { role: "client", plan: client.subscription.plan },
           );
+          customTokenOrIdToken =
+            await AdminService.exchangeCustomTokenForIdToken(customToken);
         } catch (err: any) {
           if (err.code === "auth/user-not-found") {
             throw ApiError.unauthorized("Invalid email or password");
@@ -318,8 +350,7 @@ export class ClientService {
       }
     }
 
-    const token =
-      customTokenOrIdToken || (await this.generateAuthToken(client));
+    const token = await this.generateAuthToken(client);
 
     return {
       token,
@@ -342,19 +373,28 @@ export class ClientService {
     let client: ClientDocument | null = null;
 
     if (isFirebaseInitialized && firestore) {
-      const docSnap = await firestore
-        .collection(FIRESTORE_COLLECTION)
-        .doc(id)
-        .get();
-      if (!docSnap.exists) {
-        throw ApiError.notFound(`Client with ID ${id} not found`);
+      try {
+        const docSnap = await firestore
+          .collection(FIRESTORE_COLLECTION)
+          .doc(id)
+          .get();
+        if (docSnap.exists) {
+          client = docSnap.data() as ClientDocument;
+        }
+      } catch (dbErr: any) {
+        if (dbErr.code === 7 || dbErr.details?.includes('Cloud Firestore API')) {
+          client = await mockStorage.getClientById(id);
+        } else {
+          throw dbErr;
+        }
       }
-      client = docSnap.data() as ClientDocument;
-    } else {
+    }
+
+    if (!client) {
       client = await mockStorage.getClientById(id);
-      if (!client) {
-        throw ApiError.notFound(`Client with ID ${id} not found`);
-      }
+    }
+    if (!client) {
+      throw ApiError.notFound(`Client with ID ${id} not found`);
     }
 
     // Check expiry
@@ -363,10 +403,14 @@ export class ClientService {
       client.subscription = evaluated;
       client.updatedAt = new Date().toISOString();
       if (isFirebaseInitialized && firestore) {
-        await firestore.collection(FIRESTORE_COLLECTION).doc(id).update({
-          "subscription.status": evaluated.status,
-          updatedAt: client.updatedAt,
-        });
+        try {
+          await firestore.collection(FIRESTORE_COLLECTION).doc(id).update({
+            "subscription.status": evaluated.status,
+            updatedAt: client.updatedAt,
+          });
+        } catch {
+          await mockStorage.updateClient(id, client);
+        }
       } else {
         await mockStorage.updateClient(id, client);
       }
@@ -385,7 +429,7 @@ export class ClientService {
     const client = await this.getClientById(id);
     const now = new Date().toISOString();
 
-    const updates: Partial<ClientDocument> = {
+    const updates: Partial<ClientDocument> = this.cleanObject({
       ...(input.name !== undefined && { name: input.name }),
       ...(input.phone !== undefined && { phone: input.phone }),
       ...(input.shopName !== undefined && { shopName: input.shopName }),
@@ -396,10 +440,14 @@ export class ClientService {
       }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
       updatedAt: now,
-    };
+    });
 
     if (isFirebaseInitialized && firestore) {
-      await firestore.collection(FIRESTORE_COLLECTION).doc(id).update(updates);
+      try {
+        await firestore.collection(FIRESTORE_COLLECTION).doc(id).update(updates);
+      } catch (dbErr: any) {
+        await mockStorage.updateClient(id, updates);
+      }
 
       // Update Firebase Auth display details if relevant
       if (firebaseAuth && (input.name || input.phone)) {
@@ -438,36 +486,44 @@ export class ClientService {
     const limit = query.limit || 20;
 
     if (isFirebaseInitialized && firestore) {
-      let queryRef: admin.firestore.Query =
-        firestore.collection(FIRESTORE_COLLECTION);
+      try {
+        let queryRef: admin.firestore.Query =
+          firestore.collection(FIRESTORE_COLLECTION);
 
-      if (query.status) {
-        queryRef = queryRef.where("subscription.status", "==", query.status);
-      }
-      if (query.plan) {
-        queryRef = queryRef.where("subscription.plan", "==", query.plan);
-      }
+        if (query.status) {
+          queryRef = queryRef.where("subscription.status", "==", query.status);
+        }
+        if (query.plan) {
+          queryRef = queryRef.where("subscription.plan", "==", query.plan);
+        }
 
-      const snapshot = await queryRef.get();
-      let allDocs = snapshot.docs.map(
-        (doc: any) => doc.data() as ClientDocument,
-      );
-
-      if (query.search) {
-        const search = query.search.toLowerCase();
-        allDocs = allDocs.filter(
-          (c: ClientDocument) =>
-            c.name.toLowerCase().includes(search) ||
-            c.email.toLowerCase().includes(search) ||
-            (c.shopName && c.shopName.toLowerCase().includes(search)),
+        const snapshot = await queryRef.get();
+        let allDocs = snapshot.docs.map(
+          (doc: any) => doc.data() as ClientDocument,
         );
+
+        if (query.search) {
+          const search = query.search.toLowerCase();
+          allDocs = allDocs.filter(
+            (c: ClientDocument) =>
+              c.name.toLowerCase().includes(search) ||
+              c.email.toLowerCase().includes(search) ||
+              (c.shopName && c.shopName.toLowerCase().includes(search)),
+          );
+        }
+
+        const total = allDocs.length;
+        const offset = (page - 1) * limit;
+        const paginated = allDocs.slice(offset, offset + limit);
+
+        return { clients: paginated, total, page, limit };
+      } catch (dbErr: any) {
+        if (dbErr.code === 7 || dbErr.details?.includes('Cloud Firestore API')) {
+          const result = await mockStorage.listClients(query);
+          return { ...result, page, limit };
+        }
+        throw dbErr;
       }
-
-      const total = allDocs.length;
-      const offset = (page - 1) * limit;
-      const paginated = allDocs.slice(offset, offset + limit);
-
-      return { clients: paginated, total, page, limit };
     }
 
     const result = await mockStorage.listClients(query);

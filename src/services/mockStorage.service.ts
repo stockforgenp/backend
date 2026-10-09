@@ -1,9 +1,8 @@
-import bcrypt from "bcryptjs";
 import { ClientDocument } from "../types";
 
 interface StoredClient {
   client: ClientDocument;
-  passwordHash: string;
+  password?: string;
 }
 
 class MockStorageService {
@@ -11,11 +10,12 @@ class MockStorageService {
 
   async createClient(
     client: ClientDocument,
-    plainPassword: string,
+    plainPassword?: string,
   ): Promise<ClientDocument> {
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(plainPassword, salt);
-    this.clients.set(client.id, { client: { ...client }, passwordHash });
+    this.clients.set(client.id, {
+      client: { ...client },
+      password: plainPassword,
+    });
     return client;
   }
 
@@ -39,11 +39,7 @@ class MockStorageService {
   ): Promise<ClientDocument | null> {
     for (const record of this.clients.values()) {
       if (record.client.email.toLowerCase() === email.toLowerCase()) {
-        const matches = await bcrypt.compare(
-          plainPassword,
-          record.passwordHash,
-        );
-        if (matches) {
+        if (record.password === plainPassword) {
           return { ...record.client };
         }
         return null;
