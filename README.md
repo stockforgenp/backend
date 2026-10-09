@@ -49,11 +49,13 @@ backend/
 │   ├── routes/
 │   │   ├── client.routes.ts         # /api/v1/clients
 │   │   ├── subscription.routes.ts   # /api/v1/subscriptions
+│   │   ├── inquiry.routes.ts        # /api/v1/inquiries
 │   │   └── index.ts                 # Aggregated router & /api/v1/health
 │   ├── services/
+│   │   ├── admin.service.ts         # Super Admin authentication & seeding
 │   │   ├── client.service.ts        # Client business logic (Auth + Firestore)
-│   │   ├── mockStorage.service.ts   # Local in-memory store for dev without credentials
-│   │   └── subscription.service.ts  # Subscription calculations & history
+│   │   ├── subscription.service.ts  # Subscription calculations & history
+│   │   └── inquiry.service.ts       # Customer & lead inquiries
 │   ├── types/
 │   │   └── index.ts                 # TypeScript interfaces and types
 │   ├── utils/
@@ -62,7 +64,8 @@ backend/
 │   │   └── dateUtils.ts             # Expiry & extension date calculation helpers
 │   ├── validations/
 │   │   ├── client.validation.ts     # Zod schemas for clients
-│   │   └── subscription.validation.ts # Zod schemas for subscriptions
+│   │   ├── subscription.validation.ts # Zod schemas for subscriptions
+│   │   └── inquiry.validation.ts    # Zod schemas for inquiries
 │   ├── app.ts                       # Express app configuration
 │   ├── server.ts                    # Server startup & graceful shutdown
 │   └── test-api.ts                  # End-to-end API test verification suite
@@ -196,6 +199,12 @@ Base URL: `http://localhost:5000/api/v1`
 | `/api/v1/subscriptions/cancel` | `POST` | **`super_admin` only** | Cancel client subscription |
 | `/api/v1/subscriptions/:clientId/status` | `GET` | Self or `super_admin` | Query subscription status & days remaining |
 | `/api/v1/subscriptions/:clientId/history` | `GET` | Self or `super_admin` | Audit log of subscription extensions |
+| `/api/v1/inquiries` | `POST` | Public / Optional Auth | Submit new contact, sales, or support inquiry |
+| `/api/v1/inquiries` | `GET` | **`super_admin` only** | List all inquiries with search & status filters |
+| `/api/v1/inquiries/my` | `GET` | Authenticated Client | List inquiries submitted by the logged-in client |
+| `/api/v1/inquiries/:id` | `GET` | Self or `super_admin` | View inquiry details |
+| `/api/v1/inquiries/:id` | `PATCH` | **`super_admin` only** | Update inquiry status or admin notes |
+| `/api/v1/inquiries/:id` | `DELETE` | **`super_admin` only** | Delete an inquiry |
 
 ---
 
@@ -386,7 +395,76 @@ Base URL: `http://localhost:5000/api/v1`
 
 ---
 
-### 3. System & Health
+### 3. Inquiry Management
+
+#### Submit an Inquiry (Public / Client)
+`POST /api/v1/inquiries`
+- **Headers**: Optional `Authorization: Bearer <client_token>` (auto-attaches `clientId`)
+- **Request Body**:
+```json
+{
+  "name": "Jane Doe",
+  "email": "jane@example.com",
+  "phone": "+15551234567",
+  "shopName": "Jane Boutique",
+  "type": "sales",
+  "subject": "Interested in Enterprise Plan",
+  "message": "Hello, I would like to request a demo and discuss enterprise pricing for our chain of 5 stores.",
+  "source": "website"
+}
+```
+- **Response** (`201 Created`):
+```json
+{
+  "success": true,
+  "message": "Inquiry submitted successfully",
+  "data": {
+    "id": "inq_1791537855213_84513f",
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "phone": "+15551234567",
+    "shopName": "Jane Boutique",
+    "type": "sales",
+    "subject": "Interested in Enterprise Plan",
+    "message": "...",
+    "status": "pending",
+    "source": "website",
+    "createdAt": "2026-10-09T09:24:15.000Z",
+    "updatedAt": "2026-10-09T09:24:15.000Z"
+  }
+}
+```
+
+#### List All Inquiries (Super Admin Only)
+`GET /api/v1/inquiries?page=1&limit=20&status=pending&type=sales&search=boutique`
+- **Headers**: `Authorization: Bearer <super_admin_token>`
+
+#### List My Inquiries (Authenticated Client)
+`GET /api/v1/inquiries/my?page=1&limit=10`
+- **Headers**: `Authorization: Bearer <client_token>`
+
+#### Get Inquiry Details
+`GET /api/v1/inquiries/:id`
+- **Headers**: `Authorization: Bearer <token>` (Super Admin or inquiry owner)
+
+#### Update Inquiry Status & Notes (Super Admin Only)
+`PATCH /api/v1/inquiries/:id`
+- **Headers**: `Authorization: Bearer <super_admin_token>`
+- **Request Body**:
+```json
+{
+  "status": "in_progress",
+  "adminNotes": "Assigned to sales representative. Call scheduled for tomorrow."
+}
+```
+
+#### Delete Inquiry (Super Admin Only)
+`DELETE /api/v1/inquiries/:id`
+- **Headers**: `Authorization: Bearer <super_admin_token>`
+
+---
+
+### 4. System & Health
 
 #### Health Check
 `GET /api/v1/health`

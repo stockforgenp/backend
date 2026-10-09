@@ -1,6 +1,6 @@
 import app from "./app";
 import { env } from "./config/env";
-import { isFirebaseInitialized, isMockMode } from "./config/firebase";
+import { isFirebaseInitialized } from "./config/firebase";
 import { AdminService } from "./services/admin.service";
 
 const server = app.listen(env.PORT, () => {
@@ -9,7 +9,7 @@ const server = app.listen(env.PORT, () => {
   console.log(`📡 URL: http://localhost:${env.PORT}`);
   console.log(`🌍 Environment: ${env.NODE_ENV}`);
   console.log(
-    `🔥 Firebase Mode: ${isFirebaseInitialized ? "Cloud Connected" : isMockMode ? "Simulated In-Memory" : "Disabled"}`,
+    `🔥 Firebase Mode: ${isFirebaseInitialized ? "Cloud Connected" : "Disabled"}`,
   );
   console.log(`📚 Health Check: http://localhost:${env.PORT}/api/v1/health`);
   console.log("====================================================");

@@ -2,7 +2,8 @@ import { Router, Request, Response } from "express";
 import clientRoutes from "./client.routes";
 import subscriptionRoutes from "./subscription.routes";
 import adminRoutes from "./admin.routes";
-import { isFirebaseInitialized, isMockMode } from "../config/firebase";
+import inquiryRoutes from "./inquiry.routes";
+import { isFirebaseInitialized } from "../config/firebase";
 import { sendSuccess } from "../utils/apiResponse";
 
 const router = Router();
@@ -15,7 +16,7 @@ router.get("/health", (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     firebase: {
       connected: isFirebaseInitialized,
-      mode: isMockMode ? "local_simulation" : "firebase_cloud",
+      mode: "firebase_cloud",
     },
   });
 });
@@ -24,5 +25,6 @@ router.get("/health", (_req: Request, res: Response) => {
 router.use("/admin", adminRoutes);
 router.use("/clients", clientRoutes);
 router.use("/subscriptions", subscriptionRoutes);
+router.use("/inquiries", inquiryRoutes);
 
 export default router;

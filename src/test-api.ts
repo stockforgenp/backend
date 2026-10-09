@@ -385,6 +385,156 @@ async function runTests() {
     }
   });
 
+  // 23. Public user submits an inquiry
+  let publicInquiryId = "";
+  await test("POST /inquiries submits a public inquiry (201 Created)", async () => {
+    const res = await fetch(`${baseUrl}/inquiries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Jane Doe",
+        email: "jane.doe@example.com",
+        phone: "+15551234567",
+        shopName: "Jane Boutique",
+        type: "sales",
+        subject: "Interested in Enterprise Plan",
+        message: "Hello, I would like to request a demo and discuss enterprise pricing for our chain of 5 stores.",
+        source: "website",
+      }),
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 201 || !data.data?.id || data.data.status !== "pending") {
+      throw new Error(`Expected 201 with pending inquiry, got ${res.status}: ${JSON.stringify(data)}`);
+    }
+    publicInquiryId = data.data.id;
+  });
+
+  // 24. Validation error on inquiry
+  await test("POST /inquiries returns 422 on invalid message / email", async () => {
+    const res = await fetch(`${baseUrl}/inquiries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "J",
+        email: "not-an-email",
+        subject: "Hi",
+        message: "short",
+      }),
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 422 || data.success !== false) {
+      throw new Error(`Expected 422 validation error, got ${res.status}: ${JSON.stringify(data)}`);
+    }
+  });
+
+  // 25. Authenticated client submits inquiry
+  let clientInquiryId = "";
+  await test("POST /inquiries links inquiry to authenticated client", async () => {
+    const res = await fetch(`${baseUrl}/inquiries`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${client1Token}`,
+      },
+      body: JSON.stringify({
+        name: "Apex Supermarket Admin",
+        email: email1,
+        type: "support",
+        subject: "Receipt printer configuration question",
+        message: "Need assistance configuring our ESC/POS thermal printer with StockForge desktop.",
+      }),
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 201 || data.data.clientId !== client1Id) {
+      throw new Error(`Expected 201 with client ID ${client1Id}, got: ${JSON.stringify(data)}`);
+    }
+    clientInquiryId = data.data.id;
+  });
+
+  // 26. Client views their own inquiries
+  await test("GET /inquiries/my returns client's submitted inquiries", async () => {
+    const res = await fetch(`${baseUrl}/inquiries/my`, {
+      headers: { Authorization: `Bearer ${client1Token}` },
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 200 || !Array.isArray(data.data) || data.data.length === 0) {
+      throw new Error(`Expected list of client inquiries, got: ${JSON.stringify(data)}`);
+    }
+    const found = data.data.find((i: any) => i.id === clientInquiryId);
+    if (!found) {
+      throw new Error(`Expected to find inquiry ${clientInquiryId} in my inquiries`);
+    }
+  });
+
+  // 27. Regular client CANNOT list all inquiries
+  await test("GET /inquiries returns 403 Forbidden when called by a regular client", async () => {
+    const res = await fetch(`${baseUrl}/inquiries`, {
+      headers: { Authorization: `Bearer ${client1Token}` },
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 403) {
+      throw new Error(`Expected 403 forbidden for client listing all inquiries, got: ${res.status}`);
+    }
+  });
+
+  // 28. Super Admin lists all inquiries
+  await test("GET /inquiries returns all inquiries when called by Super Admin", async () => {
+    const res = await fetch(`${baseUrl}/inquiries?page=1&limit=10`, {
+      headers: { Authorization: `Bearer ${superAdminToken}` },
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 200 || !Array.isArray(data.data) || data.meta.total < 2) {
+      throw new Error(`Expected at least 2 inquiries in admin list, got: ${JSON.stringify(data)}`);
+    }
+  });
+
+  // 29. Super Admin updates inquiry status & admin notes
+  await test("PATCH /inquiries/:id updates status and admin notes by Super Admin", async () => {
+    const res = await fetch(`${baseUrl}/inquiries/${publicInquiryId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${superAdminToken}`,
+      },
+      body: JSON.stringify({
+        status: "in_progress",
+        adminNotes: "Assigned to sales representative. Call scheduled for tomorrow.",
+      }),
+    });
+    const data = (await res.json()) as any;
+    if (
+      res.status !== 200 ||
+      data.data.status !== "in_progress" ||
+      !data.data.adminNotes.includes("Assigned to sales")
+    ) {
+      throw new Error(`Expected 200 updated inquiry, got: ${JSON.stringify(data)}`);
+    }
+  });
+
+  // 30. Regular client CANNOT delete inquiry
+  await test("DELETE /inquiries/:id returns 403 Forbidden when called by regular client", async () => {
+    const res = await fetch(`${baseUrl}/inquiries/${publicInquiryId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${client1Token}` },
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 403) {
+      throw new Error(`Expected 403 forbidden for client deleting inquiry, got: ${res.status}`);
+    }
+  });
+
+  // 31. Super Admin deletes inquiry
+  await test("DELETE /inquiries/:id succeeds when called by Super Admin", async () => {
+    const res = await fetch(`${baseUrl}/inquiries/${publicInquiryId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${superAdminToken}` },
+    });
+    const data = (await res.json()) as any;
+    if (res.status !== 200) {
+      throw new Error(`Expected 200 deleted inquiry, got ${res.status}: ${JSON.stringify(data)}`);
+    }
+  });
+
   server.close();
 
   console.log(`\n========================================`);

@@ -117,3 +117,56 @@ export interface AdminAuthResponse {
   tokenType: 'Bearer';
   admin: AdminUser;
 }
+
+export type InquiryStatus = "pending" | "in_progress" | "resolved" | "closed";
+export type InquiryType =
+  | "sales"
+  | "support"
+  | "demo"
+  | "billing"
+  | "partnership"
+  | "general";
+
+export interface InquiryDocument {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  shopName?: string;
+  type: InquiryType;
+  subject: string;
+  message: string;
+  status: InquiryStatus;
+  clientId?: string;
+  source?: string;
+  adminNotes?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateInquiryInput {
+  name: string;
+  email: string;
+  phone?: string;
+  shopName?: string;
+  type?: InquiryType;
+  subject: string;
+  message: string;
+  source?: string;
+  clientId?: string;
+}
+
+export interface UpdateInquiryInput {
+  status?: InquiryStatus;
+  adminNotes?: string;
+}
+
+export interface ListInquiriesFilter {
+  status?: InquiryStatus;
+  type?: InquiryType;
+  search?: string;
+  clientId?: string;
+  page?: number;
+  limit?: number;
+}

@@ -7,7 +7,6 @@ import {
 import {
   firebaseAuth,
   firestore,
-  isFirebaseInitialized,
 } from "../config/firebase";
 import {
   calculateNewExpiryDate,
@@ -15,7 +14,6 @@ import {
   isDateExpired,
 } from "../utils/dateUtils";
 import { ClientService } from "./client.service";
-import { mockStorage } from "./mockStorage.service";
 
 const FIRESTORE_COLLECTION = "clients";
 
@@ -70,37 +68,25 @@ export class SubscriptionService {
       updatedAt: now,
     };
 
-    // Save to Firestore or Mock
-    if (isFirebaseInitialized && firestore) {
-      try {
-        await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
-          subscription: updatedSubscription,
-          updatedAt: now,
-        });
-      } catch (dbErr: any) {
-        if (dbErr.code === 7 || dbErr.details?.includes('Cloud Firestore API')) {
-          await mockStorage.updateClient(client.id, updatedClient);
-        } else {
-          throw dbErr;
-        }
-      }
+    // Update in Firestore
+    await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
+      subscription: updatedSubscription,
+      updatedAt: now,
+    });
 
-      // Sync custom claims if plan was updated
-      if (firebaseAuth && input.plan && input.plan !== currentSub.plan) {
-        try {
-          await firebaseAuth.setCustomUserClaims(client.id, {
-            role: "client",
-            plan: targetPlan,
-          });
-        } catch (claimsErr) {
-          console.warn(
-            "Failed to update custom claims on Firebase Auth:",
-            claimsErr,
-          );
-        }
+    // Sync custom claims if plan was updated
+    if (firebaseAuth && input.plan && input.plan !== currentSub.plan) {
+      try {
+        await firebaseAuth.setCustomUserClaims(client.id, {
+          role: "client",
+          plan: targetPlan,
+        });
+      } catch (claimsErr) {
+        console.warn(
+          "Failed to update custom claims on Firebase Auth:",
+          claimsErr,
+        );
       }
-    } else {
-      await mockStorage.updateClient(client.id, updatedClient);
     }
 
     return {
@@ -121,12 +107,10 @@ export class SubscriptionService {
     expiryDate: string;
     daysRemaining: number;
     isExpired: boolean;
-    autoRenew?: boolean;
     totalExtensions: number;
   }> {
     const client = await ClientService.getClientById(clientId);
     const sub = client.subscription;
-    const expired = isDateExpired(sub.expiryDate);
 
     return {
       clientId: client.id,
@@ -135,14 +119,13 @@ export class SubscriptionService {
       startDate: sub.startDate,
       expiryDate: sub.expiryDate,
       daysRemaining: getRemainingDays(sub.expiryDate),
-      isExpired: expired,
-      autoRenew: sub.autoRenew,
-      totalExtensions: (sub.history || []).length,
+      isExpired: isDateExpired(sub.expiryDate),
+      totalExtensions: sub.history ? sub.history.length : 0,
     };
   }
 
   /**
-   * Retrieve subscription history records
+   * Get subscription payment and extension history
    */
   static async getSubscriptionHistory(
     clientId: string,
@@ -162,7 +145,7 @@ export class SubscriptionService {
     const now = new Date().toISOString();
 
     const cancellationRecord: SubscriptionHistoryRecord = {
-      id: `sub_cnc_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
+      id: `sub_cancel_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
       extendedAt: now,
       durationDays: 0,
       previousExpiryDate: client.subscription.expiryDate,
@@ -181,30 +164,12 @@ export class SubscriptionService {
       history: [...(client.subscription.history || []), cancellationRecord],
     };
 
-    if (isFirebaseInitialized && firestore) {
-      try {
-        await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
-          "subscription.status": "cancelled",
-          "subscription.autoRenew": false,
-          "subscription.history": updatedSubscription.history,
-          updatedAt: now,
-        });
-      } catch (dbErr: any) {
-        if (dbErr.code === 7 || dbErr.details?.includes('Cloud Firestore API')) {
-          await mockStorage.updateClient(client.id, {
-            subscription: updatedSubscription,
-            updatedAt: now,
-          });
-        } else {
-          throw dbErr;
-        }
-      }
-    } else {
-      await mockStorage.updateClient(client.id, {
-        subscription: updatedSubscription,
-        updatedAt: now,
-      });
-    }
+    await firestore.collection(FIRESTORE_COLLECTION).doc(client.id).update({
+      "subscription.status": "cancelled",
+      "subscription.autoRenew": false,
+      "subscription.history": updatedSubscription.history,
+      updatedAt: now,
+    });
 
     return updatedSubscription;
   }
