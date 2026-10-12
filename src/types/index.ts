@@ -173,3 +173,59 @@ export interface ListInquiriesFilter {
   page?: number;
   limit?: number;
 }
+
+export interface ReviewDocument {
+  id: string;
+  clientName: string;
+  shopName?: string;
+  location?: string;
+  rating: number; // 1 to 5
+  reviewText: string;
+  clientId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateReviewInput {
+  clientName: string;
+  shopName?: string;
+  location?: string;
+  rating: number;
+  reviewText: string;
+  clientId?: string;
+}
+
+export interface UpdateReviewInput {
+  clientName?: string;
+  shopName?: string;
+  location?: string;
+  rating?: number;
+  reviewText?: string;
+}
+
+export interface AdminStatsResponse {
+  clients: {
+    total: number;
+    active: number;
+    inactive: number;
+    trial: number;
+    expired: number;
+    cancelled: number;
+  };
+  inquiries: {
+    total: number;
+    pending: number;
+    in_progress: number;
+    resolved: number;
+    closed: number;
+  };
+  reviews: {
+    total: number;
+    averageRating: number;
+    fiveStarCount: number;
+  };
+  recentClients: ClientDocument[];
+  recentInquiries: InquiryDocument[];
+  recentReviews: ReviewDocument[];
+}
+

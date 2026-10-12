@@ -15,6 +15,7 @@ router.post("/login", validateBody(loginClientSchema), AdminController.login);
 
 // Protected Admin Endpoints
 router.get("/me", authenticateToken, requireAdmin, AdminController.getMe);
+router.get("/stats", authenticateToken, requireAdmin, AdminController.getStats);
 router.post(
   "/seed",
   authenticateToken,

@@ -51,4 +51,20 @@ export class AdminController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/v1/admin/stats
+   */
+  static async getStats(
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const stats = await AdminService.getOverviewStats();
+      sendSuccess(res, "Admin overview stats retrieved successfully", stats);
+    } catch (error) {
+      next(error);
+    }
+  }
 }

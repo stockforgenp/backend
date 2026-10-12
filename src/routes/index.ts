@@ -3,6 +3,7 @@ import clientRoutes from "./client.routes";
 import subscriptionRoutes from "./subscription.routes";
 import adminRoutes from "./admin.routes";
 import inquiryRoutes from "./inquiry.routes";
+import reviewRoutes from "./review.routes";
 import { isFirebaseInitialized } from "../config/firebase";
 import { sendSuccess } from "../utils/apiResponse";
 
@@ -26,5 +27,7 @@ router.use("/admin", adminRoutes);
 router.use("/clients", clientRoutes);
 router.use("/subscriptions", subscriptionRoutes);
 router.use("/inquiries", inquiryRoutes);
+router.use("/reviews", reviewRoutes);
 
 export default router;
+
