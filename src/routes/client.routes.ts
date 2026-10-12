@@ -27,6 +27,9 @@ const router = Router();
 // Public Client Login
 router.post("/login", validateBody(loginClientSchema), ClientController.login);
 
+// Authenticated Client Logout
+router.post("/logout", authenticateToken, ClientController.logout);
+
 // Current Authenticated Client Profile
 router.get("/me", authenticateToken, ClientController.getMe);
 

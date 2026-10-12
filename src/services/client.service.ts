@@ -5,6 +5,7 @@ import {
   LoginClientInput,
   UpdateClientInput,
   ClientAuthResponse,
+  RegisterClientResponse,
   ClientSubscription,
 } from "../types";
 import { admin, firebaseAuth, firestore } from "../config/firebase";
@@ -12,6 +13,7 @@ import { env } from "../config/env";
 import { ApiError } from "../utils/apiError";
 import { addDays, isDateExpired, getRemainingDays } from "../utils/dateUtils";
 import { AdminService } from "./admin.service";
+import { signAuthToken } from "../utils/token.util";
 
 export const FIRESTORE_COLLECTION = "clients";
 export const SUBSCRIPTION_HISTORY_COLLECTION = "subscription_history";
@@ -44,19 +46,20 @@ export class ClientService {
   }
 
   /**
-   * Helper to generate Firebase ID token for a client
+   * Helper to generate non-expiring authentication token for a client
    */
   private static async generateAuthToken(
     client: ClientDocument,
   ): Promise<string> {
-    // Create a custom token containing role and plan claims
-    const customToken = await firebaseAuth.createCustomToken(client.id, {
+    return signAuthToken({
+      uid: client.id,
+      email: client.email,
+      name: client.name,
       role: "client",
+      isAdmin: false,
+      businessName: client.shopName,
       plan: client.subscription.plan,
     });
-
-    // Exchange custom token for an official Firebase ID token
-    return await AdminService.exchangeCustomTokenForIdToken(customToken);
   }
 
   /**
@@ -64,17 +67,20 @@ export class ClientService {
    */
   static async registerClient(
     input: RegisterClientInput,
-  ): Promise<ClientAuthResponse> {
-    const trialDays = input.trialDays || env.DEFAULT_TRIAL_DAYS;
-    const now = new Date();
-    const expiryDate = addDays(now, trialDays);
+  ): Promise<RegisterClientResponse> {
     const plan = input.plan || "trial";
+    const durationDays =
+      input.durationDays ||
+      input.trialDays ||
+      (plan === "trial" ? env.DEFAULT_TRIAL_DAYS : 30);
+    const now = new Date();
+    const expiryDate = addDays(now, durationDays);
 
     const initialSubscription: ClientSubscription = {
       plan,
       status: plan === "trial" ? "trial" : "active",
       startDate: now.toISOString(),
-      durationDays: trialDays,
+      durationDays,
       expiryDate: expiryDate.toISOString(),
       autoRenew: false,
     };
@@ -107,7 +113,7 @@ export class ClientService {
         shopType: input.shopType,
         address: input.address,
         currencySymbol: input.currencySymbol || "$",
-        isActive: true,
+        status: input.status || "active",
         subscription: initialSubscription,
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
@@ -123,13 +129,16 @@ export class ClientService {
       const initialHistoryRecord = {
         id: `sub_hist_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
         clientId: uid,
-        type: "trial_creation",
+        type: plan === "trial" ? "trial_creation" : "plan_creation",
         extendedAt: now.toISOString(),
-        durationDays: trialDays,
+        durationDays,
         previousExpiryDate: now.toISOString(),
         newExpiryDate: expiryDate.toISOString(),
         plan,
-        notes: "Initial account registration & trial allocation",
+        notes:
+          plan === "trial"
+            ? `Initial account registration & trial allocation (${durationDays} days)`
+            : `Initial account registration on ${plan} plan (${durationDays} days)`,
         extendedBy: "system",
         createdAt: now.toISOString(),
       };
@@ -139,11 +148,7 @@ export class ClientService {
         .doc(initialHistoryRecord.id)
         .set(this.cleanObject(initialHistoryRecord));
 
-      const token = await this.generateAuthToken(clientDoc);
-
       return {
-        token,
-        tokenType: "Bearer",
         client: clientDoc,
         subscriptionStatus: {
           status: clientDoc.subscription.status,
@@ -175,12 +180,30 @@ export class ClientService {
       );
     }
 
+    let emailToAuth = input.email.trim();
+
+    // If input is a phone number (does not contain @), look up corresponding client email from Firestore
+    if (!emailToAuth.includes("@")) {
+      const clientPhoneSnapshot = await firestore
+        .collection(FIRESTORE_COLLECTION)
+        .where("phone", "==", emailToAuth)
+        .limit(1)
+        .get();
+
+      if (clientPhoneSnapshot.empty) {
+        throw ApiError.unauthorized("Invalid email, phone number, or password");
+      }
+
+      const clientData = clientPhoneSnapshot.docs[0].data() as ClientDocument;
+      emailToAuth = clientData.email;
+    }
+
     const verifyUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${env.FIREBASE_WEB_API_KEY}`;
     const response = await fetch(verifyUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: input.email,
+        email: emailToAuth,
         password: input.password,
         returnSecureToken: true,
       }),
@@ -195,7 +218,7 @@ export class ClientService {
         errorMessage === "INVALID_PASSWORD" ||
         errorMessage === "INVALID_LOGIN_CREDENTIALS"
       ) {
-        throw ApiError.unauthorized("Invalid email or password");
+        throw ApiError.unauthorized("Invalid email, phone number, or password");
       }
       throw ApiError.badRequest(errorMessage || "Authentication failed");
     }
@@ -213,10 +236,23 @@ export class ClientService {
     }
 
     const client = docSnap.data() as ClientDocument;
+    const clientStatus = client.status || "active";
 
-    if (!client.isActive) {
+    if (clientStatus === "banned") {
       throw ApiError.forbidden(
-        "Client account has been deactivated. Please contact support.",
+        "Client account has been banned due to policy violation. Please contact support.",
+      );
+    }
+
+    if (clientStatus === "suspended") {
+      throw ApiError.forbidden(
+        "Client account is currently suspended. Please contact support or administration.",
+      );
+    }
+
+    if (clientStatus === "inactive") {
+      throw ApiError.forbidden(
+        "Client account is inactive. Please contact support to activate your account.",
       );
     }
 
@@ -290,6 +326,8 @@ export class ClientService {
     const client = await this.getClientById(id);
     const now = new Date().toISOString();
 
+    const targetStatus = input.status;
+
     const updates: Partial<ClientDocument> = this.cleanObject({
       ...(input.name !== undefined && { name: input.name }),
       ...(input.phone !== undefined && { phone: input.phone }),
@@ -299,7 +337,9 @@ export class ClientService {
       ...(input.currencySymbol !== undefined && {
         currencySymbol: input.currencySymbol,
       }),
-      ...(input.isActive !== undefined && { isActive: input.isActive }),
+      ...(targetStatus !== undefined && {
+        status: targetStatus,
+      }),
       updatedAt: now,
     });
 
@@ -336,20 +376,32 @@ export class ClientService {
     limit: number;
   }> {
     const page = query.page || 1;
-    const limit = query.limit || 20;
+    const limit = query.limit || 100;
 
     let queryRef: admin.firestore.Query =
       firestore.collection(FIRESTORE_COLLECTION);
 
-    if (query.status) {
-      queryRef = queryRef.where("subscription.status", "==", query.status);
-    }
     if (query.plan) {
       queryRef = queryRef.where("subscription.plan", "==", query.plan);
     }
 
     const snapshot = await queryRef.get();
-    let allDocs = snapshot.docs.map((doc: any) => doc.data() as ClientDocument);
+    let allDocs = snapshot.docs.map((doc: any) => {
+      const data = doc.data() as ClientDocument;
+      return {
+        ...data,
+        status: data.status || "active",
+      };
+    });
+
+    if (query.status) {
+      const filterStatus = query.status.toLowerCase();
+      allDocs = allDocs.filter((c: ClientDocument) => {
+        const clientStatus = (c.status || "active").toLowerCase();
+        const subStatus = (c.subscription?.status || "").toLowerCase();
+        return clientStatus === filterStatus || subStatus === filterStatus;
+      });
+    }
 
     if (query.search) {
       const search = query.search.toLowerCase();

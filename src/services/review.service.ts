@@ -76,7 +76,7 @@ export class ReviewService {
     };
   }> {
     const page = filter.page || 1;
-    const limit = filter.limit || 50;
+    const limit = filter.limit || 100;
 
     let query: FirebaseFirestore.Query = firestore.collection(REVIEWS_COLLECTION);
     if (filter.clientId) {

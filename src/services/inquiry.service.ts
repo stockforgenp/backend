@@ -36,6 +36,7 @@ export class InquiryService {
       email: input.email.trim().toLowerCase(),
       phone: input.phone?.trim(),
       shopName: input.shopName?.trim(),
+      storeType: input.storeType?.trim(),
       type: input.type || "general",
       subject: input.subject.trim(),
       message: input.message.trim(),
@@ -112,7 +113,7 @@ export class InquiryService {
     totalPages: number;
   }> {
     const page = filter.page || 1;
-    const limit = filter.limit || 20;
+    const limit = filter.limit || 100;
 
     let query: FirebaseFirestore.Query = firestore.collection(
       INQUIRIES_COLLECTION,

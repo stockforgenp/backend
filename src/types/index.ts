@@ -25,7 +25,12 @@ export interface SubscriptionHistoryRecord {
   paymentReference?: string;
   notes?: string;
   extendedBy?: string; // admin, system, or client
-  type?: "trial_creation" | "extension" | "plan_change" | "cancellation" | string;
+  type?:
+    | "trial_creation"
+    | "extension"
+    | "plan_change"
+    | "cancellation"
+    | string;
   createdAt?: string;
 }
 
@@ -39,6 +44,12 @@ export interface ClientSubscription {
   history?: SubscriptionHistoryRecord[];
 }
 
+export type ClientAccountStatus =
+  | "active"
+  | "inactive"
+  | "suspended"
+  | "banned";
+
 export interface ClientDocument {
   id: string; // Firebase Auth UID
   email: string;
@@ -48,7 +59,7 @@ export interface ClientDocument {
   shopType?: string;
   address?: string;
   currencySymbol?: string;
-  isActive: boolean;
+  status: ClientAccountStatus;
   subscription: ClientSubscription;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
@@ -63,8 +74,10 @@ export interface RegisterClientInput {
   shopType?: string;
   address?: string;
   currencySymbol?: string;
+  status?: ClientAccountStatus;
   plan?: SubscriptionPlan;
   trialDays?: number;
+  durationDays?: number;
 }
 
 export interface LoginClientInput {
@@ -85,11 +98,12 @@ export interface ExtendSubscriptionInput {
 export interface UpdateClientInput {
   name?: string;
   phone?: string;
+  password?: string;
   shopName?: string;
   shopType?: string;
   address?: string;
   currencySymbol?: string;
-  isActive?: boolean;
+  status?: ClientAccountStatus;
 }
 
 export interface ClientAuthResponse {
@@ -105,19 +119,30 @@ export interface ClientAuthResponse {
   };
 }
 
+export interface RegisterClientResponse {
+  client: Omit<ClientDocument, "password">;
+  subscriptionStatus: {
+    status: SubscriptionStatus;
+    plan: SubscriptionPlan;
+    expiryDate: string;
+    daysRemaining: number;
+    isExpired: boolean;
+  };
+}
+
 export interface AdminUser {
   id: string;
   email: string;
   name: string;
   phoneNumber: string;
-  role: 'super_admin' | 'admin';
+  role: "super_admin" | "admin";
   createdAt: string;
   updatedAt: string;
 }
 
 export interface AdminAuthResponse {
   token: string;
-  tokenType: 'Bearer';
+  tokenType: "Bearer";
   admin: AdminUser;
 }
 
@@ -128,7 +153,14 @@ export type InquiryType =
   | "demo"
   | "billing"
   | "partnership"
-  | "general";
+  | "general"
+  | "on_site_demo"
+  | "vat_compliance"
+  | "hardware_pairing"
+  | "multi_unit_help"
+  | "wholesale_deployment"
+  | "general_support"
+  | string;
 
 export interface InquiryDocument {
   id: string;
@@ -136,6 +168,7 @@ export interface InquiryDocument {
   email: string;
   phone?: string;
   shopName?: string;
+  storeType?: string;
   type: InquiryType;
   subject: string;
   message: string;
@@ -153,6 +186,7 @@ export interface CreateInquiryInput {
   email: string;
   phone?: string;
   shopName?: string;
+  storeType?: string;
   type?: InquiryType;
   subject: string;
   message: string;
@@ -228,4 +262,3 @@ export interface AdminStatsResponse {
   recentInquiries: InquiryDocument[];
   recentReviews: ReviewDocument[];
 }
-

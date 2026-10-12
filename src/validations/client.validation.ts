@@ -13,11 +13,13 @@ export const registerClientSchema = z.object({
     .enum(["trial", "starter", "pro", "enterprise"])
     .optional()
     .default("trial"),
-  trialDays: z.number().int().positive().max(365).optional(),
+  trialDays: z.number().int().positive().max(3650).optional(),
+  durationDays: z.number().int().positive().max(3650).optional(),
+  status: z.enum(["active", "inactive", "suspended", "banned"]).optional(),
 });
 
 export const loginClientSchema = z.object({
-  email: z.string().email("Invalid email address"),
+  email: z.string().min(1, "Email or phone number is required"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -28,7 +30,11 @@ export const updateClientSchema = z.object({
   shopType: z.string().optional(),
   address: z.string().optional(),
   currencySymbol: z.string().optional(),
-  isActive: z.boolean().optional(),
+  password: z
+    .string()
+    .min(6, "Password must be at least 6 characters long")
+    .optional(),
+  status: z.enum(["active", "inactive", "suspended", "banned"]).optional(),
 });
 
 export const clientParamsSchema = z.object({
@@ -37,10 +43,19 @@ export const clientParamsSchema = z.object({
 
 export const listClientsQuerySchema = z.object({
   page: z.string().regex(/^\d+$/).transform(Number).optional().default("1"),
-  limit: z.string().regex(/^\d+$/).transform(Number).optional().default("20"),
+  limit: z.string().regex(/^\d+$/).transform(Number).optional().default("100"),
   search: z.string().optional(),
   status: z
-    .enum(["active", "expired", "trial", "grace_period", "cancelled"])
+    .enum([
+      "active",
+      "inactive",
+      "suspended",
+      "banned",
+      "expired",
+      "trial",
+      "grace_period",
+      "cancelled",
+    ])
     .optional(),
   plan: z.string().optional(),
 });

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { AdminService } from "../services/admin.service";
 import { sendSuccess } from "../utils/apiResponse";
+import { revokeToken } from "../utils/token.util";
 
 export class AdminController {
   /**
@@ -12,7 +13,7 @@ export class AdminController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const result = await AdminService.loginSuperAdmin(req.body);
+      const result = await AdminService.login(req.body);
       sendSuccess(res, "Super Admin authenticated successfully", result);
     } catch (error) {
       next(error);
@@ -20,33 +21,22 @@ export class AdminController {
   }
 
   /**
-   * GET /api/v1/admin/me
+   * POST /api/v1/admin/logout
    */
-  static async getMe(
+  static async logout(
     req: Request,
     res: Response,
     next: NextFunction,
   ): Promise<void> {
     try {
-      const uid = req.user?.uid || "super_admin_root";
-      const admin = await AdminService.getAdminProfile(uid);
-      sendSuccess(res, "Super Admin profile retrieved successfully", admin);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * POST /api/v1/admin/seed
-   */
-  static async seed(
-    _req: Request,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> {
-    try {
-      const admin = await AdminService.seedSuperAdmin();
-      sendSuccess(res, "Super Admin seeded successfully", admin);
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]?.trim()
+        : "";
+      if (token) {
+        await revokeToken(token, req.user?.uid);
+      }
+      sendSuccess(res, "Super Admin logged out successfully");
     } catch (error) {
       next(error);
     }

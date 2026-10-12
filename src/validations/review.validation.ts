@@ -23,7 +23,7 @@ export const reviewParamsSchema = z.object({
 
 export const listReviewsQuerySchema = z.object({
   page: z.string().regex(/^\d+$/).transform(Number).optional().default("1"),
-  limit: z.string().regex(/^\d+$/).transform(Number).optional().default("50"),
+  limit: z.string().regex(/^\d+$/).transform(Number).optional().default("100"),
   rating: z.string().regex(/^[1-5]$/).transform(Number).optional(),
   search: z.string().optional(),
   clientId: z.string().optional(),

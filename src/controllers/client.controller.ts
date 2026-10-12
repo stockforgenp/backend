@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { ClientService } from "../services/client.service";
 import { sendCreated, sendSuccess } from "../utils/apiResponse";
 import { ApiError } from "../utils/apiError";
+import { revokeToken } from "../utils/token.util";
 
 export class ClientController {
   /**
@@ -31,6 +32,28 @@ export class ClientController {
     try {
       const result = await ClientService.loginClient(req.body);
       sendSuccess(res, "Client logged in successfully", result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/clients/logout
+   */
+  static async logout(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]?.trim()
+        : "";
+      if (token) {
+        await revokeToken(token, req.user?.uid);
+      }
+      sendSuccess(res, "Client logged out successfully");
     } catch (error) {
       next(error);
     }

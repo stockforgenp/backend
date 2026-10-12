@@ -22,22 +22,11 @@ export const env = {
   PORT: parseInt(process.env.PORT || "5000", 10),
   CLIENT_CORS_ORIGIN: process.env.CLIENT_CORS_ORIGIN || "*",
 
-
   // Firebase Credentials
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID?.trim() || "",
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL?.trim() || "",
   FIREBASE_PRIVATE_KEY: sanitizePrivateKey(process.env.FIREBASE_PRIVATE_KEY),
   FIREBASE_WEB_API_KEY: process.env.FIREBASE_WEB_API_KEY?.trim() || "",
-
-  // Super Admin Credentials
-  SUPER_ADMIN_EMAIL:
-    process.env.SUPER_ADMIN_EMAIL?.trim() || "admin@stockforge.io",
-  SUPER_ADMIN_PASSWORD:
-    process.env.SUPER_ADMIN_PASSWORD || "SuperAdmin@StockForge2026!",
-  SUPER_ADMIN_NAME:
-    process.env.SUPER_ADMIN_NAME?.trim() || "Super Administrator",
-  SUPER_ADMIN_PHONE_NUMBER:
-    process.env.SUPER_ADMIN_PHONE_NUMBER?.trim() || "+9779809167106",
 
   DEFAULT_TRIAL_DAYS: parseInt(process.env.DEFAULT_TRIAL_DAYS || "14", 10),
 };

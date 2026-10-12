@@ -7,12 +7,21 @@ export const inquiryTypeEnum = z.enum([
   "billing",
   "partnership",
   "general",
+  "on_site_demo",
+  "vat_compliance",
+  "hardware_pairing",
+  "multi_unit_help",
+  "wholesale_deployment",
+  "general_support",
 ]);
 
 export const inquiryStatusEnum = z.enum([
+  "new",
   "pending",
+  "contacted",
   "in_progress",
   "resolved",
+  "converted",
   "closed",
 ]);
 
@@ -21,6 +30,7 @@ export const createInquirySchema = z.object({
   email: z.string().email("Invalid email address"),
   phone: z.string().optional(),
   shopName: z.string().max(100).optional(),
+  storeType: z.string().max(100).optional(),
   type: inquiryTypeEnum.optional().default("general"),
   subject: z
     .string()
@@ -45,7 +55,7 @@ export const inquiryParamsSchema = z.object({
 
 export const listInquiriesQuerySchema = z.object({
   page: z.string().regex(/^\d+$/).transform(Number).optional().default("1"),
-  limit: z.string().regex(/^\d+$/).transform(Number).optional().default("20"),
+  limit: z.string().regex(/^\d+$/).transform(Number).optional().default("100"),
   status: inquiryStatusEnum.optional(),
   type: inquiryTypeEnum.optional(),
   search: z.string().optional(),

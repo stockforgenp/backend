@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "test": "tsx src/test-api.ts",
-    "seed:admin": "tsx src/scripts/seedAdmin.ts",
     "build": "rimraf dist && tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit"

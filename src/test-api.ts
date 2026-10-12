@@ -59,18 +59,7 @@ async function runTests() {
     superAdminToken = data.data.token;
   });
 
-  // 3. Super Admin Profile
-  await test("GET /admin/me returns Super Admin profile with super_admin role", async () => {
-    const res = await fetch(`${baseUrl}/admin/me`, {
-      headers: { Authorization: `Bearer ${superAdminToken}` },
-    });
-    const data = (await res.json()) as any;
-    if (res.status !== 200 || data.data?.role !== "super_admin" || data.data?.email !== "admin@stockforge.io") {
-      throw new Error(`Expected 200 with super_admin profile, got ${res.status}: ${JSON.stringify(data)}`);
-    }
-  });
-
-  // 4. Role Guard: Registration blocked without token (401)
+  // 3. Role Guard: Registration blocked without token (401)
   await test("POST /clients/register returns 401 Unauthorized when no token provided", async () => {
     const res = await fetch(`${baseUrl}/clients/register`, {
       method: "POST",

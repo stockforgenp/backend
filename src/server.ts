@@ -1,7 +1,6 @@
 import app from "./app";
 import { env } from "./config/env";
 import { isFirebaseInitialized } from "./config/firebase";
-import { AdminService } from "./services/admin.service";
 
 const server = app.listen(env.PORT, () => {
   console.log("====================================================");
@@ -13,11 +12,6 @@ const server = app.listen(env.PORT, () => {
   );
   console.log(`📚 Health Check: http://localhost:${env.PORT}/api/v1/health`);
   console.log("====================================================");
-
-  // Automatically seed and verify Super Admin
-  AdminService.seedSuperAdmin().catch((err) =>
-    console.warn("⚠️ Super Admin auto-seed warning:", err.message)
-  );
 });
 
 // Graceful Shutdown
