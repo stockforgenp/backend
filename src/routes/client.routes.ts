@@ -20,10 +20,6 @@ import {
 
 const router = Router();
 
-// ==========================================
-// Authentication Routes
-// ==========================================
-
 // Public Client Login
 router.post("/login", validateBody(loginClientSchema), ClientController.login);
 
@@ -32,10 +28,6 @@ router.post("/logout", authenticateToken, ClientController.logout);
 
 // Current Authenticated Client Profile
 router.get("/me", authenticateToken, ClientController.getMe);
-
-// ==========================================
-// Client Management Routes
-// ==========================================
 
 // Super Admin Only: Register new client
 router.post(

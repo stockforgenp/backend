@@ -4,7 +4,6 @@ import subscriptionRoutes from "./subscription.routes";
 import adminRoutes from "./admin.routes";
 import inquiryRoutes from "./inquiry.routes";
 import reviewRoutes from "./review.routes";
-import { isFirebaseInitialized } from "../config/firebase";
 import { sendSuccess } from "../utils/apiResponse";
 
 const router = Router();
@@ -15,10 +14,6 @@ router.get("/health", (_req: Request, res: Response) => {
     status: "ok",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    firebase: {
-      connected: isFirebaseInitialized,
-      mode: "firebase_cloud",
-    },
   });
 });
 
@@ -30,4 +25,3 @@ router.use("/inquiries", inquiryRoutes);
 router.use("/reviews", reviewRoutes);
 
 export default router;
-
