@@ -201,6 +201,26 @@ export class AdminService {
     );
     const recentReviews = reviews.slice(0, 6);
 
+    // 4. Finances (Income & Expenses)
+    let totalIncome = 0;
+    let totalExpenses = 0;
+    let financeCount = 0;
+    try {
+      const financesSnap = await firestore.collection("finances").get();
+      financeCount = financesSnap.size;
+      for (const doc of financesSnap.docs) {
+        const data = doc.data() as any;
+        const amt = Number(data.amount) || 0;
+        if (data.type === "income") {
+          totalIncome += amt;
+        } else if (data.type === "expense") {
+          totalExpenses += amt;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load finances for overview stats:", e);
+    }
+
     return {
       clients: clientStats,
       inquiries: inquiryStats,
@@ -208,6 +228,12 @@ export class AdminService {
         total: reviews.length,
         averageRating,
         fiveStarCount,
+      },
+      finances: {
+        totalIncome: Math.round(totalIncome * 100) / 100,
+        totalExpenses: Math.round(totalExpenses * 100) / 100,
+        netProfit: Math.round((totalIncome - totalExpenses) * 100) / 100,
+        transactionCount: financeCount,
       },
       recentClients,
       recentInquiries,

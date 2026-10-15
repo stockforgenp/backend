@@ -258,7 +258,83 @@ export interface AdminStatsResponse {
     averageRating: number;
     fiveStarCount: number;
   };
+  finances?: {
+    totalIncome: number;
+    totalExpenses: number;
+    netProfit: number;
+    transactionCount: number;
+  };
   recentClients: ClientDocument[];
   recentInquiries: InquiryDocument[];
   recentReviews: ReviewDocument[];
 }
+
+export type FinanceTransactionType = "income" | "expense";
+
+export interface FinanceTransactionDocument {
+  id: string;
+  type: FinanceTransactionType; // "income" (earned) or "expense" (spent)
+  category: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  paymentMethod?: string;
+  clientId?: string;
+  clientName?: string;
+  clientShopName?: string;
+  reference?: string;
+  note?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateFinanceTransactionInput {
+  type: FinanceTransactionType;
+  category: string;
+  amount: number;
+  date: string;
+  paymentMethod?: string;
+  clientId?: string;
+  clientName?: string;
+  clientShopName?: string;
+  reference?: string;
+  note?: string;
+  createdBy?: string;
+}
+
+export interface UpdateFinanceTransactionInput {
+  type?: FinanceTransactionType;
+  category?: string;
+  amount?: number;
+  date?: string;
+  paymentMethod?: string;
+  clientId?: string;
+  clientName?: string;
+  clientShopName?: string;
+  reference?: string;
+  note?: string;
+}
+
+export interface ListFinancesFilter {
+  type?: FinanceTransactionType | "all";
+  category?: string;
+  clientId?: string;
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface FinanceSummaryStats {
+  totalIncome: number; // Total Earned
+  totalExpenses: number; // Total Spent
+  netProfit: number; // Total Earned - Total Spent
+  transactionCount: number;
+  incomeCount: number;
+  expenseCount: number;
+  incomeByCategory: Record<string, number>;
+  expenseByCategory: Record<string, number>;
+  recentTransactions: FinanceTransactionDocument[];
+}
+
